@@ -41,21 +41,17 @@ These implementations, or equivalent implementations in other languages such as 
 ​
 ### Usage:
 ​
-The command `docker build .` builds the environment.
-​
-Next, we suggest that you:
-
 1. Run the test to verify that the Cairo program hash is indeed the one saved in the file
-*src/starkware/cairo/dex/program_hash.json*.
+*src/starkware/cairo/dex/program_hash.json* by running the command:\
+    `docker build .`
+
 2. Verify that the same hash is used by StarkEx on Mainnet by running the script
-*src/services/extract_cairo_hash.py* in the following way:
-
-
-`./src/services/exchange/extract_cairo_hash.py --main_address <checksummed_main_address> --node_endpoint <your_node_endpoint> `
+*src/services/extract_cairo_hash.py* in the following way:\
+    `./src/services/exchange/extract_cairo_hash.py --main_address <checksummed_main_address> --node_endpoint <your_node_endpoint> `
 ​
 
 You can find the relevant addresses and current versions for the
-different StarkEx deployments [here](https://docs.starkware.co/starkex-v3/starkex-deep-dive/smart-contracts-1/deployments-addresses).
+different StarkEx deployments [here](https://docs.starkware.co/starkex-v3/deployments-addresses).
 
 When comparing the hash, please make sure you checkout the tag that corresponds to the
 deployed version from this repo.

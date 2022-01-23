@@ -172,7 +172,7 @@ end
 # * 0 <= global_expiration_timestamp, and it has not expired yet.
 func execute_limit_order(
         hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        l1_order_message_ptr : L1OrderMessageOutput*,
+        limit_order : ExchangeLimitOrder*, l1_order_message_ptr : L1OrderMessageOutput*,
         l1_order_message_start_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
         l1_vault_dict : DictAccess*, order_dict : DictAccess*, amount_sold, amount_bought,
         fee_info_exchange : FeeInfoExchange*, dex_context_ptr : DexContext*) -> (
@@ -180,7 +180,6 @@ func execute_limit_order(
         l1_order_message_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
         l1_vault_dict : DictAccess*, order_dict : DictAccess*):
     # Local variables.
-    local limit_order : ExchangeLimitOrder*
     local order_id
     local prev_fulfilled_amount
     local new_fulfilled_amount
@@ -188,31 +187,12 @@ func execute_limit_order(
     local is_l1_order
     %{
         from common.objects.transaction.common_transaction import OrderL1, OrderL2
-        # Initialize fee related fields.
-        if order.fee_info is None:
-            fee_limit, fee_token_id, fee_src_vault = (0, 0, 0)
-        else:
-            fee_info = order.fee_info
-            fee_limit, fee_token_id, fee_src_vault = (
-                fee_info.fee_limit, fee_info.token_id, fee_info.source_vault_id)
 
-        # Initialize limit_order.
         if isinstance(order, OrderL1):
-            signature = (0, 0)
-            public_key = int(order.eth_address, 16)
             ids.is_l1_order = 1
         else:
-            assert isinstance(order, OrderL2), f'Unsupported order type'
-            signature = (order.signature.r, order.signature.s)
-            public_key = order.public_key
+            assert isinstance(order, OrderL2), f"Unsupported order type"
             ids.is_l1_order = 0
-
-        order_base = segments.gen_arg([
-            order.nonce, public_key, order.expiration_timestamp, *signature
-        ])
-        ids.limit_order = segments.gen_arg([
-            order_base, order.amount_buy, order.amount_sell, fee_limit, order.token_buy,
-            order.token_sell, fee_token_id, order.vault_id_buy, order.vault_id_sell, fee_src_vault])
 
         ids.order_id = order.order_id
         ids.prev_fulfilled_amount = order_witness.prev_fulfilled_amount

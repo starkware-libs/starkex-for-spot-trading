@@ -6,28 +6,31 @@ from web3 import HTTPProvider, Web3
 
 ADAPTER_ABI = [
     {
-        'inputs': [],
-        'name': 'programHash',
-        'outputs': [{'internalType': 'uint256', 'name': '', 'type': 'uint256'}],
-        'stateMutability': 'view',
-        'type': 'function'}
+        "inputs": [],
+        "name": "programHash",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
 ]
 
 STARKEX_ABI = [
     {
-        'inputs': [],
-        'name': 'getRegisteredVerifiers',
-        'outputs': [{'internalType': 'address[]', 'name': '_verifers', 'type': 'address[]'}],
-        'stateMutability': 'view',
-        'type': 'function'}
+        "inputs": [],
+        "name": "getRegisteredVerifiers",
+        "outputs": [{"internalType": "address[]", "name": "_verifers", "type": "address[]"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
 ]
 
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
-        description='Demonstrate extraction starkex cairo program hash')
-    parser.add_argument('--node_endpoint', type=str)
-    parser.add_argument('--main_address', type=str)
+        description="Demonstrate extraction starkex cairo program hash"
+    )
+    parser.add_argument("--node_endpoint", type=str)
+    parser.add_argument("--main_address", type=str)
     return parser.parse_args()
 
 
@@ -42,9 +45,10 @@ def main():
 
     program_hash = adapter.functions.programHash().call()
     print(
-        f'Cairo program hash for StarkEx on address {args.main_address}\n'
-        f'is {program_hash} (0x{program_hash:x})')
+        f"Cairo program hash for StarkEx on address {args.main_address}\n"
+        f"is {program_hash} (0x{program_hash:x})"
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

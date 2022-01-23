@@ -1,3 +1,4 @@
+from services.exchange.cairo.signature_message_hashes import ExchangeLimitOrder
 from starkware.cairo.common.cairo_builtins import HashBuiltin, SignatureBuiltin
 from starkware.cairo.common.dict_access import DictAccess
 from starkware.cairo.dex.dex_constants import BALANCE_BOUND
@@ -22,6 +23,9 @@ func execute_settlement(
         l1_vault_dict : DictAccess*, order_dict : DictAccess*):
     # Local variables.
     alloc_locals
+    local party_a_order : ExchangeLimitOrder*
+    local party_b_order : ExchangeLimitOrder*
+
     local party_a_sold
     local party_b_sold
 
@@ -29,6 +33,14 @@ func execute_settlement(
     tempvar inclusive_amount_bound = BALANCE_BOUND - 1
 
     %{
+        from starkware.cairo.dex.settlement_hint_functions import (
+            get_fee_info_struct, get_fee_witness, get_limit_order_struct, get_order_witness)
+
+        ids.party_a_order = get_limit_order_struct(
+          order=settlement.party_a_order, segments=segments, identifiers=ids._context.identifiers)
+        ids.party_b_order = get_limit_order_struct(
+          order=settlement.party_b_order, segments=segments, identifiers=ids._context.identifiers)
+
         ids.party_a_sold = settlement.settlement_info.party_a_sold
         ids.party_b_sold = settlement.settlement_info.party_b_sold
     %}
@@ -43,12 +55,15 @@ func execute_settlement(
     # Guarantee that party_b_sold <= inclusive_amount_bound < BALANCE_BOUND.
     assert [range_check_ptr + 3] = inclusive_amount_bound - party_b_sold
 
+    # Verify that token_buy (asset_id_buy) of one party equals the token_sell (asset_id_sell) of the
+    # other party.
+    assert party_a_order.asset_id_buy = party_b_order.asset_id_sell
+    assert party_b_order.asset_id_buy = party_a_order.asset_id_sell
+
     # Call execute_limit_order for party a:
     local fee_info_exchange_party_a : FeeInfoExchange*
     %{
         from common.objects.transaction.common_transaction import Party
-        from starkware.cairo.dex.settlement_hint_functions import (
-          get_fee_info_struct, get_fee_witness, get_order_witness)
 
         # Set order, order_witness and fee_witness - the required hint arguments for
         # execute_limit_order.
@@ -68,6 +83,7 @@ func execute_settlement(
         hash_ptr=hash_ptr,
         range_check_ptr=range_check_ptr + 4,
         ecdsa_ptr=ecdsa_ptr,
+        limit_order=party_a_order,
         l1_order_message_ptr=l1_order_message_ptr,
         l1_order_message_start_ptr=l1_order_message_start_ptr,
         vault_dict=vault_dict,
@@ -100,6 +116,7 @@ func execute_settlement(
         hash_ptr=limit_order_a_ret.hash_ptr,
         range_check_ptr=limit_order_a_ret.range_check_ptr,
         ecdsa_ptr=limit_order_a_ret.ecdsa_ptr,
+        limit_order=party_b_order,
         l1_order_message_ptr=limit_order_a_ret.l1_order_message_ptr,
         l1_order_message_start_ptr=l1_order_message_start_ptr,
         vault_dict=limit_order_a_ret.vault_dict,

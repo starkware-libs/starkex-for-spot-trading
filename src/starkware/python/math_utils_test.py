@@ -1,7 +1,15 @@
 import pytest
 
 from starkware.python.math_utils import (
-    div_ceil, div_mod, is_power_of_2, is_quad_residue, next_power_of_2, safe_div, safe_log2, sqrt)
+    div_ceil,
+    div_mod,
+    is_power_of_2,
+    is_quad_residue,
+    next_power_of_2,
+    safe_div,
+    safe_log2,
+    sqrt,
+)
 
 
 def test_safe_div():

@@ -61,8 +61,8 @@ func main(
     %{
         from common.objects.transaction.common_transaction import OrderL1
         from common.objects.transaction.raw_transaction import ConditionalTransfer, Settlement
-        from starkware.cairo.dex.vault_state_manager import L2VaultStateManager
         from starkware.cairo.dex.main_hint_functions import update_l1_vault_balances
+        from starkware.cairo.dex.vault_state_manager import L2VaultStateManager
         vault_state_segment = segments.add()
         vault_state_mgr = L2VaultStateManager(vault_state_segment=vault_state_segment)
 

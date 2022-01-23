@@ -23,7 +23,7 @@ class L1VaultKey:
         return self.eth_key, self.token_id, self.vault_index
 
     @classmethod
-    def from_order_l1(cls, order_l1: OrderL1, vault_role: UserVaultRole) -> 'L1VaultKey':
+    def from_order_l1(cls, order_l1: OrderL1, vault_role: UserVaultRole) -> "L1VaultKey":
         """
         Creates an L1VaultKey instance based on an OrderL1.
         vault_role is used to determine the desired vault to produce the key for, out of sell, buy
@@ -32,17 +32,21 @@ class L1VaultKey:
         eth_key = int(order_l1.eth_address, 16)
         if vault_role is UserVaultRole.SELL:
             return cls(
-                eth_key=eth_key, token_id=order_l1.token_sell, vault_index=order_l1.vault_id_sell)
+                eth_key=eth_key, token_id=order_l1.token_sell, vault_index=order_l1.vault_id_sell
+            )
         elif vault_role is UserVaultRole.BUY:
             return cls(
-                eth_key=eth_key, token_id=order_l1.token_buy, vault_index=order_l1.vault_id_buy)
+                eth_key=eth_key, token_id=order_l1.token_buy, vault_index=order_l1.vault_id_buy
+            )
         elif vault_role is UserVaultRole.FEE_SOURCE:
-            assert order_l1.fee_info is not None, f'fee_info cannot be None in an L1 order.'
+            assert order_l1.fee_info is not None, f"fee_info cannot be None in an L1 order."
             return cls(
-                eth_key=eth_key, token_id=order_l1.fee_info.token_id,
-                vault_index=order_l1.fee_info.source_vault_id)
+                eth_key=eth_key,
+                token_id=order_l1.fee_info.token_id,
+                vault_index=order_l1.fee_info.source_vault_id,
+            )
         else:
-            raise NotImplementedError(f'Unsupported UserVaultRole.')
+            raise NotImplementedError(f"Unsupported UserVaultRole.")
 
 
 @dataclasses.dataclass
@@ -57,8 +61,11 @@ L1VaultKeysToBalance = Dict[L1VaultKey, L1VaultBalances]
 
 
 def update_order_vaults(
-        party: Party, order: OrderL1, settlement_info: SettlementInfo,
-        balance_updates: L1VaultKeysToBalance):
+    party: Party,
+    order: OrderL1,
+    settlement_info: SettlementInfo,
+    balance_updates: L1VaultKeysToBalance,
+):
     """
     Updates L1VaultBalances of an L1 vault according to the data in order.
     Used to compute the minimal balance a vault reaches throughout the execution of a batch if it
@@ -72,22 +79,26 @@ def update_order_vaults(
     # Update L1VaultBalances for each of vault roles in the order.
     for vault_role, diff in zip(
         (UserVaultRole.SELL, UserVaultRole.BUY, UserVaultRole.FEE_SOURCE),
-            (-amount_sold, amount_bought, -fee_taken)):
+        (-amount_sold, amount_bought, -fee_taken),
+    ):
         l1_vault_key = L1VaultKey.from_order_l1(order_l1=order, vault_role=vault_role)
 
         # Get the vault L1VaultBalances computed so far. Initialize both balances to 0 if vault was
         # not yet seen.
-        min_balance, current_balance = dataclasses.astuple(balance_updates.get(
-            l1_vault_key, L1VaultBalances(min_balance=0, current_balance=0)))
+        min_balance, current_balance = dataclasses.astuple(
+            balance_updates.get(l1_vault_key, L1VaultBalances(min_balance=0, current_balance=0))
+        )
         new_balance = current_balance + diff
         new_min_balance = min(new_balance, min_balance)
 
         balance_updates[l1_vault_key] = L1VaultBalances(
-            min_balance=new_min_balance, current_balance=new_balance)
+            min_balance=new_min_balance, current_balance=new_balance
+        )
 
 
 def update_l1_vault_balances(
-        transactions: List[Transaction]) -> Tuple[Dict[int, int], Dict[int, L1VaultKey]]:
+    transactions: List[Transaction],
+) -> Tuple[Dict[int, int], Dict[int, L1VaultKey]]:
     """
     Returns two dictionaries:
     1. A mapping from the hashed key of every L1 vault that appears in the given transaction list,
@@ -103,8 +114,11 @@ def update_l1_vault_balances(
             order = tx.get_order_by_party(party=party)
             if isinstance(order, OrderL1):
                 update_order_vaults(
-                    party=party, order=order, settlement_info=tx.settlement_info,
-                    balance_updates=l1_vaults_balances)
+                    party=party,
+                    order=order,
+                    settlement_info=tx.settlement_info,
+                    balance_updates=l1_vaults_balances,
+                )
 
     # A mapping from the DictAccess keys (the hash of L1VaultKey), to the original
     # L1VaultKey.
