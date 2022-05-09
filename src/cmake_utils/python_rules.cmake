@@ -9,6 +9,8 @@ function(get_lib_info_file OUTPUT_VARIABLE LIB)
   set(${OUTPUT_VARIABLE} ${PY_LIB_INFO_GLOBAL_DIR}/${LIB}.info PARENT_SCOPE)
 endfunction()
 
+add_custom_target(all_python_libs_dryrun)
+
 # Creates a python library target.
 # Caller should make this target depend on artifact targets (using add_dependencies())
 # to force correct build order.
@@ -56,7 +58,7 @@ function(python_lib LIB)
   # Copy files.
   copy_files(${LIB}_copy_files ${CMAKE_CURRENT_SOURCE_DIR} ${LIB_DIR} ${ARGS_FILES})
   get_target_property(COPY_STAMP ${LIB}_copy_files STAMP_FILE)
-  set(ALL_FILE_DEPS ${ALL_FILE_DEPS} ${COPY_STAMP})
+  list(APPEND ALL_FILE_DEPS ${COPY_STAMP})
 
   # Copy artifacts.
   foreach(ARTIFACT ${ARGS_ARTIFACTS})
@@ -71,41 +73,53 @@ function(python_lib LIB)
       DEPENDS ${ARTIFACT_SRC}
       COMMENT "Copying artifact ${ARTIFACT_SRC} to ${LIB_DIR}/${ARTIFACT_DEST}"
     )
-    set(ALL_FILE_DEPS ${ALL_FILE_DEPS} ${LIB_DIR}/${ARTIFACT_DEST})
-    set(LIB_FILES ${LIB_FILES} ${ARGS_PREFIX}${ARTIFACT_DEST})
+    list(APPEND ALL_FILE_DEPS ${LIB_DIR}/${ARTIFACT_DEST})
+    list(APPEND LIB_FILES ${ARGS_PREFIX}${ARTIFACT_DEST})
   endforeach()
 
   # Create a list of all dependencies regardless of python's version.
-  execute_process(
-    COMMAND ${UNITE_LIBS_EXECUTABLE} ${ARGS_LIBS}
-    OUTPUT_VARIABLE UNITED_LIBS
-  )
+  set(UNITED_LIBS ${ARGS_LIBS})
+  if("${UNITED_LIBS}" MATCHES ":")
+    execute_process(
+      COMMAND ${UNITE_LIBS_EXECUTABLE} ${UNITED_LIBS}
+      OUTPUT_VARIABLE UNITED_LIBS
+    )
+  endif()
   separate_arguments(UNITED_LIBS)
 
   # Info target.
   set(DEP_INFO)
   foreach(DEP_LIB ${UNITED_LIBS} ${ARGS_PY_EXE_DEPENDENCIES})
     get_lib_info_file(DEP_INFO_FILE ${DEP_LIB})
-    set(DEP_INFO ${DEP_INFO} ${DEP_INFO_FILE})
+    LIST(APPEND DEP_INFO ${DEP_INFO_FILE})
   endforeach()
 
   get_lib_info_file(INFO_FILE ${LIB})
   file(RELATIVE_PATH CMAKE_DIR ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+  set(GEN_PY_LIB_COMMAND
+    ${GEN_PY_LIB_EXECUTABLE}
+    --name ${LIB}
+    --lib_dir ${LIB_DIR_ROOT}
+    --files ${LIB_FILES}
+    --lib_deps ${ARGS_LIBS}
+    --py_exe_deps ${ARGS_PY_EXE_DEPENDENCIES}
+    --cmake_dir ${CMAKE_DIR}
+    --prefix ${ARGS_PREFIX}
+  )
   add_custom_command(
     OUTPUT ${INFO_FILE}
-    COMMAND ${GEN_PY_LIB_EXECUTABLE}
-      --name ${LIB}
-      --lib_dir ${LIB_DIR_ROOT}
-      --files ${LIB_FILES}
-      --lib_deps ${ARGS_LIBS}
-      --output ${INFO_FILE}
-      --py_exe_deps ${ARGS_PY_EXE_DEPENDENCIES}
-      --cmake_dir ${CMAKE_DIR}
-      --prefix ${ARGS_PREFIX}
+    COMMAND ${GEN_PY_LIB_COMMAND} --output ${INFO_FILE}
     DEPENDS ${GEN_PY_LIB_EXECUTABLE} ${DEP_INFO} ${UNITED_LIBS}
       ${ARGS_PY_EXE_DEPENDENCIES} ${ALL_FILE_DEPS} ${LIB}_copy_files
   )
   add_custom_target(${LIB} ALL DEPENDS ${INFO_FILE})
+  add_custom_command(
+    OUTPUT ${INFO_FILE}.dryrun
+    COMMAND ${GEN_PY_LIB_COMMAND} --output ${INFO_FILE}.dryrun
+    DEPENDS ${GEN_PY_LIB_EXECUTABLE}
+  )
+  add_custom_target(${LIB}_dryrun DEPENDS ${INFO_FILE}.dryrun)
+  add_dependencies(all_python_libs_dryrun ${LIB}_dryrun)
 endfunction()
 
 # Creates a virtual environment target.
@@ -129,7 +143,7 @@ function(python_venv VENV_NAME)
   set(DEP_INFO)
   foreach(DEP_LIB ${ARGS_LIBS})
     get_lib_info_file(DEP_INFO_FILE ${DEP_LIB})
-    set(DEP_INFO ${DEP_INFO} ${DEP_INFO_FILE})
+    list(APPEND DEP_INFO ${DEP_INFO_FILE})
   endforeach()
 
   add_custom_command(
@@ -203,15 +217,23 @@ endfunction()
 
 function(python_test TEST_NAME)
   # Parse arguments.
-  set(options)
+  set(options NO_CODE_COVERAGE)
   set(oneValueArgs VENV TESTED_MODULES TEST_ARGS ENVIRONMENT_VARS)
   set(multiValueArgs)
   cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+  # If code coverage is enabled, need to add command line options + an environment variable.
+  set(COVERAGE_ARGS "")
+  if(NOT ARGS_NO_CODE_COVERAGE)
+    set(COVERAGE_ARGS "--cov-report html:{VENV_SITE_DIR}/coverage_py_html --cov {VENV_SITE_DIR}/${ARGS_TESTED_MODULES}")
+    string(REPLACE "/" "." COVERAGE_FILE_SUFFIX "${ARGS_TESTED_MODULES}")
+    set(ARGS_ENVIRONMENT_VARS "${ARGS_ENVIRONMENT_VARS} COVERAGE_FILE=.coverage.${COVERAGE_FILE_SUFFIX}")
+  endif()
+
   python_exe(${TEST_NAME}
     VENV ${ARGS_VENV}
     MODULE pytest
-    ARGS "{VENV_SITE_DIR}/${ARGS_TESTED_MODULES} ${ARGS_TEST_ARGS}"
+    ARGS "${COVERAGE_ARGS} {VENV_SITE_DIR}/${ARGS_TESTED_MODULES} ${ARGS_TEST_ARGS}"
     WORKING_DIR ${CMAKE_BINARY_DIR}
     ENVIRONMENT_VARS ${ARGS_ENVIRONMENT_VARS}
   )
@@ -224,12 +246,25 @@ endfunction()
 
 function(full_python_test TEST_NAME)
   # Parse arguments.
-  set(options)
+  set(options NO_CODE_COVERAGE)
   set(oneValueArgs TESTED_MODULES TEST_ARGS PYTHON ENVIRONMENT_VARS)
-  cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "" ${ARGN})
+  set(multiValueArgs LIBS ARTIFACTS PY_EXE_DEPENDENCIES)
+  cmake_parse_arguments(ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  # If code coverage is suppressed, the option needs to be passed to the python_exe macro.
+  # Otherwise, need to add the pytest-cov dependency.
+  set(CODE_COVERAGE_SUPPRESSION_FLAG)
+  if(ARGS_NO_CODE_COVERAGE)
+    set(CODE_COVERAGE_SUPPRESSION_FLAG NO_CODE_COVERAGE)
+  else()
+    list(APPEND ARGS_LIBS "pip_pytest_cov")
+  endif()
 
   python_lib(${TEST_NAME}_lib
     ${ARGS_UNPARSED_ARGUMENTS}
+    LIBS ${ARGS_LIBS}
+    ARTIFACTS ${ARGS_ARTIFACTS}
+    PY_EXE_DEPENDENCIES ${ARGS_PY_EXE_DEPENDENCIES}
   )
   python_venv(${TEST_NAME}_venv
     PYTHON ${ARGS_PYTHON}
@@ -240,5 +275,6 @@ function(full_python_test TEST_NAME)
     TESTED_MODULES ${ARGS_TESTED_MODULES}
     TEST_ARGS ${ARGS_TEST_ARGS}
     ENVIRONMENT_VARS ${ARGS_ENVIRONMENT_VARS}
+    ${CODE_COVERAGE_SUPPRESSION_FLAG}
   )
 endfunction()

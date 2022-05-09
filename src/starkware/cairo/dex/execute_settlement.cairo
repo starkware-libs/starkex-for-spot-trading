@@ -14,13 +14,24 @@ from starkware.cairo.dex.message_l1_order import L1OrderMessageOutput
 # * settlement - the settlement to execute.
 # * settlement_witness - the matching SettlementWitness.
 func execute_settlement(
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        l1_order_message_ptr : L1OrderMessageOutput*,
-        l1_order_message_start_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*, order_dict : DictAccess*, dex_context_ptr : DexContext*) -> (
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        l1_order_message_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*, order_dict : DictAccess*):
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    l1_order_message_ptr : L1OrderMessageOutput*,
+    l1_order_message_start_ptr : L1OrderMessageOutput*,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+    dex_context_ptr : DexContext*,
+) -> (
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    l1_order_message_ptr : L1OrderMessageOutput*,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+):
     # Local variables.
     alloc_locals
     local party_a_order : ExchangeLimitOrder*
@@ -34,7 +45,11 @@ func execute_settlement(
 
     %{
         from starkware.cairo.dex.settlement_hint_functions import (
-            get_fee_info_struct, get_fee_witness, get_limit_order_struct, get_order_witness)
+            get_fee_info_struct,
+            get_fee_witness,
+            get_limit_order_struct,
+            get_order_witness,
+        )
 
         ids.party_a_order = get_limit_order_struct(
           order=settlement.party_a_order, segments=segments, identifiers=ids._context.identifiers)
@@ -92,7 +107,8 @@ func execute_settlement(
         amount_sold=party_a_sold,
         amount_bought=party_b_sold,
         fee_info_exchange=fee_info_exchange_party_a,
-        dex_context_ptr=dex_context_ptr)
+        dex_context_ptr=dex_context_ptr,
+    )
 
     # Call execute_limit_order for party b.
     local fee_info_exchange_party_b : FeeInfoExchange*
@@ -125,7 +141,8 @@ func execute_settlement(
         amount_sold=party_b_sold,
         amount_bought=party_a_sold,
         fee_info_exchange=fee_info_exchange_party_b,
-        dex_context_ptr=dex_context_ptr)
+        dex_context_ptr=dex_context_ptr,
+    )
 
     return (
         hash_ptr=limit_order_b_ret.hash_ptr,
@@ -134,5 +151,6 @@ func execute_settlement(
         l1_order_message_ptr=limit_order_b_ret.l1_order_message_ptr,
         vault_dict=limit_order_b_ret.vault_dict,
         l1_vault_dict=limit_order_b_ret.l1_vault_dict,
-        order_dict=limit_order_b_ret.order_dict)
+        order_dict=limit_order_b_ret.order_dict,
+    )
 end

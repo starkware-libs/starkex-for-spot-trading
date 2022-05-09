@@ -32,7 +32,8 @@ end
 
 # Computes the hash h(key_token_hash, amount), where key_token_hash := h(stark_key, token_id).
 func compute_vault_hash(hash_ptr : HashBuiltin*, key_token_hash, amount) -> (
-        vault_hash, hash_ptr : HashBuiltin*):
+    vault_hash, hash_ptr : HashBuiltin*
+):
     if amount == 0:
         return (vault_hash=ZERO_VAULT_HASH, hash_ptr=hash_ptr)
     end
@@ -46,15 +47,17 @@ end
 # by writing the change to vault_change_ptr.
 # May also by used to verify the values in a certain vault.
 func l2_vault_update_balances(
-        balance_before, balance_after, stark_key, token_id, vault_index,
-        vault_change_ptr : DictAccess*):
+    balance_before, balance_after, stark_key, token_id, vault_index, vault_change_ptr : DictAccess*
+):
     let vault_access : DictAccess* = vault_change_ptr
     vault_access.key = vault_index
     let (prev_vault_state_ptr) = get_vault_state(
-        stark_key=stark_key, token_id=token_id, balance=balance_before)
+        stark_key=stark_key, token_id=token_id, balance=balance_before
+    )
     vault_access.prev_value = prev_vault_state_ptr
     let (new_vault_state_ptr) = get_vault_state(
-        stark_key=stark_key, token_id=token_id, balance=balance_after)
+        stark_key=stark_key, token_id=token_id, balance=balance_after
+    )
     vault_access.new_value = new_vault_state_ptr
     return ()
 end
@@ -65,8 +68,8 @@ end
 # Hint arguments:
 # vault_update_witness - L2VaultUpdateWitness containing the balance_before of the updated vault.
 func l2_vault_update_diff(
-        range_check_ptr, diff, stark_key, token_id, vault_index,
-        vault_change_ptr : DictAccess*) -> (range_check_ptr):
+    range_check_ptr, diff, stark_key, token_id, vault_index, vault_change_ptr : DictAccess*
+) -> (range_check_ptr):
     # Local variables.
     alloc_locals
     local balance_before
@@ -88,7 +91,8 @@ func l2_vault_update_diff(
         stark_key=stark_key,
         token_id=token_id,
         vault_index=vault_index,
-        vault_change_ptr=vault_change_ptr)
+        vault_change_ptr=vault_change_ptr,
+    )
 
     return (range_check_ptr=range_check_ptr + 2)
 end

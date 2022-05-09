@@ -5,9 +5,9 @@ from starkware.cairo.common.registers import get_fp_and_pc
 from starkware.cairo.dex.dex_constants import BALANCE_BOUND
 from starkware.cairo.dex.vault_update import L2VaultState
 
-const ONCHAIN_DATA_KEY_INDEX_BOUND = %[ 2**15 %]
-const ONCHAIN_DATA_TOKEN_INDEX_BOUND = %[ 2**15 %]
-const ONCHAIN_DATA_VAULT_ID_BOUND = %[ 2**31 %]
+const ONCHAIN_DATA_KEY_INDEX_BOUND = 2 ** 15
+const ONCHAIN_DATA_TOKEN_INDEX_BOUND = 2 ** 15
+const ONCHAIN_DATA_VAULT_ID_BOUND = 2 ** 31
 const VAULT_CHANGE_SHIFT = ONCHAIN_DATA_VAULT_ID_BOUND * BALANCE_BOUND *
     ONCHAIN_DATA_KEY_INDEX_BOUND * ONCHAIN_DATA_TOKEN_INDEX_BOUND
 
@@ -31,7 +31,8 @@ end
 # Hint assumptions:
 #   * A variable 'values' should be available with the values of the table.
 func initialize_encoding_table(output_ptr : felt*) -> (
-        output_ptr : felt*, table_ptr : felt*, table_size):
+    output_ptr : felt*, table_ptr : felt*, table_size
+):
     alloc_locals
     local table_size
     %{
@@ -46,15 +47,16 @@ end
 # Returns a 124-bit integer encoding a single vault change.
 # See output_volition_data() for more details.
 func get_vault_change_encoding(
-        range_check_ptr, vault_index, vault_state : L2VaultState*,
-        encoding_tables : EncodingTables*) -> (encoded_change, range_check_ptr):
+    range_check_ptr, vault_index, vault_state : L2VaultState*, encoding_tables : EncodingTables*
+) -> (encoded_change, range_check_ptr):
     alloc_locals
     %{ __find_element_index = keys[ids.vault_state.stark_key] %}
     let (elm_ptr) = find_element{range_check_ptr=range_check_ptr}(
         array_ptr=encoding_tables.key_table_ptr,
         elm_size=1,
         n_elms=encoding_tables.n_keys,
-        key=vault_state.stark_key)
+        key=vault_state.stark_key,
+    )
     local key_index = elm_ptr - encoding_tables.key_table_ptr
 
     # Find the index for the token_id.
@@ -63,7 +65,8 @@ func get_vault_change_encoding(
         array_ptr=encoding_tables.token_table_ptr,
         elm_size=1,
         n_elms=encoding_tables.n_tokens,
-        key=vault_state.token_id)
+        key=vault_state.token_id,
+    )
     local token_index = elm_ptr - encoding_tables.token_table_ptr
 
     let encoded_change = ((vault_index *
@@ -76,7 +79,8 @@ end
 # Serializes a single vault change as a 124-bit integer.
 # See output_volition_data() for more details.
 func serialize_vault_change(output_ptr : felt*, partial_word, encoded_change) -> (
-        output_ptr : felt*, partial_word):
+    output_ptr : felt*, partial_word
+):
     # Check if there is a pending change (partial_word != -1).
     tempvar partial_word_plus_one = partial_word + 1
     jmp serialize if partial_word_plus_one != 0
@@ -90,14 +94,19 @@ end
 
 # Helper function for output_volition_data().
 func output_volition_data_inner(
-        output_ptr : felt*, range_check_ptr, encoding_tables : EncodingTables*,
-        squashed_vault_dict : DictAccess*, n_updates, partial_word) -> (
-        output_ptr : felt*, range_check_ptr):
+    output_ptr : felt*,
+    range_check_ptr,
+    encoding_tables : EncodingTables*,
+    squashed_vault_dict : DictAccess*,
+    n_updates,
+    partial_word,
+) -> (output_ptr : felt*, range_check_ptr):
     jmp body if n_updates != 0
     # Call serialize_vault_change one additional time to make sure that if we have an odd number
     # of changes, the last one will be recorded.
     let (output_ptr_ret, _) = serialize_vault_change(
-        output_ptr=output_ptr, partial_word=partial_word, encoded_change=partial_word)
+        output_ptr=output_ptr, partial_word=partial_word, encoded_change=partial_word
+    )
     return (output_ptr=output_ptr_ret, range_check_ptr=range_check_ptr)
 
     body:
@@ -128,17 +137,20 @@ func output_volition_data_inner(
         encoding_tables=encoding_tables,
         squashed_vault_dict=squashed_vault_dict + DictAccess.SIZE,
         n_updates=n_updates - 1,
-        partial_word=partial_word)
+        partial_word=partial_word,
+    )
 
     full_update:
     let (encoded_change, range_check_ptr) = get_vault_change_encoding(
         range_check_ptr=range_check_ptr,
         vault_index=squashed_vault_dict.key,
         vault_state=new_vault,
-        encoding_tables=encoding_tables)
+        encoding_tables=encoding_tables,
+    )
     tmp_range_check_ptr = range_check_ptr
     let (output_ptr, partial_word) = serialize_vault_change(
-        output_ptr=output_ptr, partial_word=partial_word, encoded_change=encoded_change)
+        output_ptr=output_ptr, partial_word=partial_word, encoded_change=encoded_change
+    )
 
     # Call output_volition_data_inner recursively.
     return output_volition_data_inner(
@@ -147,7 +159,8 @@ func output_volition_data_inner(
         encoding_tables=encoding_tables,
         squashed_vault_dict=squashed_vault_dict + DictAccess.SIZE,
         n_updates=n_updates - 1,
-        partial_word=partial_word)
+        partial_word=partial_word,
+    )
 end
 
 # Outputs onchain data for the given changes in the vaults.
@@ -163,8 +176,8 @@ end
 # Each output word contains 2 changes. If the total number of updates is odd, the last word
 # will contain the same update twice.
 func output_volition_data(
-        output_ptr : felt*, range_check_ptr, squashed_vault_dict : DictAccess*, n_updates) -> (
-        output_ptr : felt*, range_check_ptr):
+    output_ptr : felt*, range_check_ptr, squashed_vault_dict : DictAccess*, n_updates
+) -> (output_ptr : felt*, range_check_ptr):
     alloc_locals
     local encoding_tables : EncodingTables
 
@@ -214,7 +227,8 @@ func output_volition_data(
         encoding_tables=&encoding_tables,
         squashed_vault_dict=squashed_vault_dict,
         n_updates=n_updates,
-        partial_word=-1)
+        partial_word=-1,
+    )
     %{ vm_exit_scope() %}
     return (output_ptr=output_ptr, range_check_ptr=range_check_ptr)
 end

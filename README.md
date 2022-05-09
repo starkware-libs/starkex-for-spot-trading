@@ -1,4 +1,3 @@
-
 # StarkEx Cairo Code Repository
 ​
 ## Overview

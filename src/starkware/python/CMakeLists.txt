@@ -1,13 +1,16 @@
 python_lib(starkware_python_utils_lib
     PREFIX starkware/python
     FILES
-    __init__.py
-    math_utils.py
-    utils.py
-    python_dependencies.py
     async_subprocess.py
+    math_utils.py
+    object_utils.py
+    python_dependencies.py
+    utils.py
+    utils_stub_module.py
+    utils_stub_module.pyi
 
     LIBS
+    pip_pyyaml
     pip_sympy
 )
 
@@ -57,4 +60,5 @@ full_python_test(starkware_python_utils_test
     starkware_python_test_utils_lib
     starkware_python_utils_lib
     pip_pytest
+    pip_pytest_asyncio
 )

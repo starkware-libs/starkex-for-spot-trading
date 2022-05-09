@@ -1,12 +1,33 @@
 import asyncio
+import contextlib
 import itertools
+import logging
 import os
 import random
 import re
 import subprocess
+import time
 from collections import UserDict
-from typing import Any, Iterable, List, Optional
+from typing import (
+    Any,
+    AsyncIterable,
+    Awaitable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    TypeVar,
+)
 
+import yaml
+
+# All functions with stubs are imported from this module.
+from starkware.python.utils_stub_module import *  # noqa
+
+T = TypeVar("T")
+NumType = TypeVar("NumType", int, float)
 HASH_BYTES = 32
 
 
@@ -48,6 +69,13 @@ def assert_same_and_get(*args):
     return args[0]
 
 
+def assert_exhausted(iterator: Iterator):
+    """
+    Verifies that given iterator is empty.
+    """
+    assert all(False for _ in iterator), "Iterator is not empty."
+
+
 def unique(x):
     """
     Removes duplicates while preserving order.
@@ -62,20 +90,28 @@ def unique_ordered_union(x, y):
     return list(dict.fromkeys(list(x) + list(y)).keys())
 
 
-def add_counters(x, y):
+def add_counters(x: Mapping[T, NumType], y: Mapping[T, NumType]) -> Dict[T, NumType]:
     """
     Given two dicts x, y, returns a dict d s.t.
-      d[a] = d[x] + d[y]
+      d[k] = x[k] + y[k]
     """
     return {k: x.get(k, 0) + y.get(k, 0) for k in unique_ordered_union(x.keys(), y.keys())}
 
 
-def sub_counters(x, y):
+def sub_counters(x: Mapping[T, NumType], y: Mapping[T, NumType]) -> Dict[T, NumType]:
     """
     Given two dicts x, y, returns a dict d s.t.
-      d[a] = d[x] - d[y]
+      d[k] = x[k] - y[k]
     """
     return {k: x.get(k, 0) - y.get(k, 0) for k in unique_ordered_union(x.keys(), y.keys())}
+
+
+def multiply_counter_by_scalar(scalar: NumType, counter: Mapping[T, NumType]) -> Dict[T, NumType]:
+    """
+    Given a non-negative scalar and a counter, returns a dict d s.t.
+      d[k] = scalar * counter[k]
+    """
+    return {k: scalar * v for k, v in counter.items()}
 
 
 def indent(code, indentation):
@@ -95,6 +131,10 @@ def indent(code, indentation):
     # We enforce the "not followed by ..." condition using negative lookahead (?!\n|$),
     # looking for end of string ($) or another \n.
     return indentation + re.sub(r"\n(?!\n|$)", "\n" + indentation, code)
+
+
+def join_lines(lines: Iterable[str]) -> str:
+    return "\n".join(lines)
 
 
 def get_random_instance() -> random.Random:
@@ -198,16 +238,6 @@ async def cancel_futures(*futures: asyncio.Future):
             pass
 
 
-def safe_zip(*iterables: Iterable[Any]) -> Iterable:
-    """
-    Zips iterables. Makes sure the lengths of all iterables are equal.
-    """
-    sentinel = object()
-    for combo in itertools.zip_longest(*iterables, fillvalue=sentinel):
-        assert sentinel not in combo, "Iterables to safe_zip are not equal in length."
-        yield combo
-
-
 def composite(*funcs):
     """
     Returns the composition of all the given functions, which is a function that runs the last
@@ -232,7 +262,12 @@ def composite(*funcs):
     return composition_function
 
 
-def to_bytes(value: int, length: Optional[int] = None, byte_order: Optional[str] = None) -> bytes:
+def to_bytes(
+    value: int,
+    length: Optional[int] = None,
+    byte_order: Optional[str] = None,
+    signed: Optional[bool] = None,
+) -> bytes:
     """
     Converts the given integer to a bytes object of given length and byte order.
     The default values are 32B width (which is the hash result width) and 'big', respectively.
@@ -243,10 +278,15 @@ def to_bytes(value: int, length: Optional[int] = None, byte_order: Optional[str]
     if byte_order is None:
         byte_order = "big"
 
-    return int.to_bytes(value, length=length, byteorder=byte_order)
+    if signed is None:
+        signed = False
+
+    return int.to_bytes(value, length=length, byteorder=byte_order, signed=signed)
 
 
-def from_bytes(value: bytes, byte_order: Optional[str] = None) -> int:
+def from_bytes(
+    value: bytes, byte_order: Optional[str] = None, signed: Optional[bool] = None
+) -> int:
     """
     Converts the given bytes object (parsed according to the given byte order) to an integer.
     Default byte order is 'big'.
@@ -254,11 +294,107 @@ def from_bytes(value: bytes, byte_order: Optional[str] = None) -> int:
     if byte_order is None:
         byte_order = "big"
 
-    return int.from_bytes(value, byteorder=byte_order)
+    if signed is None:
+        signed = False
+
+    return int.from_bytes(value, byteorder=byte_order, signed=signed)
 
 
-def blockify(data, chunk_size: int):
+def blockify(data, chunk_size: int) -> Iterable:
     """
     Returns the given data partitioned to chunks of chunks_size (last chunk might be smaller).
     """
+    assert chunk_size > 0, f"chunk_size must be greater than 0. Got: {chunk_size}."
     return (data[i : i + chunk_size] for i in range(0, len(data), chunk_size))
+
+
+def iter_blockify(data: Iterable[T], chunk_size: int) -> Iterable[List[T]]:
+    """
+    Returns the given data partitioned to tuple-chunks of chunks_size (last chunk might be smaller).
+    """
+    assert chunk_size > 0, f"chunk_size must be greater than 0. Got: {chunk_size}."
+
+    iterator = iter(data)
+    while True:
+        chunk = list(itertools.islice(iterator, chunk_size))
+        if len(chunk) == 0:
+            break
+
+        yield chunk
+
+
+async def gather_in_chunks(
+    awaitables: Iterable[Awaitable[T]], chunk_size: Optional[int] = None
+) -> List[T]:
+    """
+    Awaits on the given awaitables using asyncio.gather in chunks of chunk_size;
+    Returns a list containing the results.
+    """
+    return [
+        element
+        async for element in gen_gather_in_chunks(awaitables=awaitables, chunk_size=chunk_size)
+    ]
+
+
+async def gen_gather_in_chunks(
+    awaitables: Iterable[Awaitable[T]], chunk_size: Optional[int] = None
+) -> AsyncIterable[T]:
+    """
+    Awaits on the given awaitables using asyncio.gather in chunks of chunk_size;
+    Yields the results.
+    """
+    chunk_size = 100 if chunk_size is None else chunk_size
+    for awaitable_chunk in iter_blockify(data=awaitables, chunk_size=chunk_size):
+        chunk = await asyncio.gather(*awaitable_chunk)
+
+        for element in chunk:
+            yield element
+
+
+def all_subclasses(cls: type) -> List[type]:
+    """
+    Recursively finds all subclasses of a given class.
+    """
+    return list(set(_all_subclasses(cls)))
+
+
+def _all_subclasses(cls: type) -> List[type]:
+    return [cls] + list(
+        itertools.chain(*[_all_subclasses(subclass) for subclass in cls.__subclasses__()])
+    )
+
+
+def get_exception_repr(exception: Exception) -> str:
+    return f"{type(exception).__name__}({exception})"
+
+
+@contextlib.contextmanager
+def log_time(logger: logging.Logger, name: str):
+    """
+    Logs the elapsed time in seconds.
+
+    Example:
+        with log_time(logger=logger, name="Foo"):
+            sleep(1)
+    """
+    start = time.time()
+    try:
+        yield
+    finally:
+        logger.info(f"Ran '{name}'. Elapsed: {time.time() - start}.")
+
+
+def to_ascii_string(value: str) -> str:
+    """
+    Converts the given string to an ascii-encodeable one by replacing non-ascii characters with '?'.
+    """
+    return value.encode("ascii", "replace").decode("ascii")
+
+
+def update_yaml_file(file_path: str, data: Dict[str, Any]):
+    """
+    Updates yaml file in given path with given data.
+    """
+    with open(file_path, "w") as fp:
+        fp.write(yaml.dump(data=data, default_flow_style=False, width=400))
+        fp.flush()

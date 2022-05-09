@@ -10,7 +10,8 @@ from starkware.cairo.dex.verify_order_id import verify_order_id
 # i.e. - partial_msg_hash in hash(partial_msg_hash, packed_msg).
 # See the documentation of order_and_transfer_hash_31 for more details.
 func add_optional_condition_hash(temp_partial_msg_hash, condition, hash_ptr : HashBuiltin*) -> (
-        partial_msg_hash, hash_ptr : HashBuiltin*):
+    partial_msg_hash, hash_ptr : HashBuiltin*
+):
     if condition == 0:
         return (partial_msg_hash=temp_partial_msg_hash, hash_ptr=hash_ptr)
     end
@@ -53,8 +54,17 @@ end
 # * 0 <= nonce < NONCE_SHIFT.
 # * 0 <= expiration_timestamp < EXPIRATION_TIMESTAMP_SHIFT.
 func order_and_transfer_hash_31{hash_ptr : HashBuiltin*}(
-        order_type, vault0, vault1, amount0, amount1, token0, token1_or_pub_key, nonce,
-        expiration_timestamp, condition) -> (message_hash : felt):
+    order_type,
+    vault0,
+    vault1,
+    amount0,
+    amount1,
+    token0,
+    token1_or_pub_key,
+    nonce,
+    expiration_timestamp,
+    condition,
+) -> (message_hash : felt):
     alloc_locals
     local packed_msg
 
@@ -76,7 +86,8 @@ func order_and_transfer_hash_31{hash_ptr : HashBuiltin*}(
     let (partial_msg_hash, final_hash_ptr) = add_optional_condition_hash(
         temp_partial_msg_hash=temp_partial_msg_hash.result,
         condition=condition,
-        hash_ptr=hash_ptr + HashBuiltin.SIZE)
+        hash_ptr=hash_ptr + HashBuiltin.SIZE,
+    )
 
     # Compute the message to sign on.
     assert final_hash_ptr.x = partial_msg_hash

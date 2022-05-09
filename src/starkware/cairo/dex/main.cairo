@@ -3,29 +3,33 @@
 from starkware.cairo.common.cairo_builtins import HashBuiltin, SignatureBuiltin
 from starkware.cairo.common.dict import dict_new, dict_squash
 from starkware.cairo.common.dict_access import DictAccess
+from starkware.cairo.common.find_element import search_sorted_lower
 from starkware.cairo.common.merkle_multi_update import merkle_multi_update
+from starkware.cairo.common.patricia import patricia_update
 from starkware.cairo.common.squash_dict import squash_dict
-from starkware.cairo.dex.dex_context import make_dex_context
+from starkware.cairo.dex.dex_constants import ROLLUP_VAULT_BIT
+from starkware.cairo.dex.dex_context import DexContext, make_dex_context
 from starkware.cairo.dex.execute_batch import execute_batch
 from starkware.cairo.dex.execute_modification import ModificationOutput
-from starkware.cairo.dex.hash_vault_ptr_dict import hash_vault_ptr_dict
+from starkware.cairo.dex.general_config import GeneralConfig, encode_general_config
+from starkware.cairo.dex.hash_vault_ptr_dict import adjust_vault_dict_keys, hash_vault_ptr_dict
 from starkware.cairo.dex.l1_vault_update import L1VaultOutput, output_l1_vault_update_data
 from starkware.cairo.dex.message_l1_order import L1OrderMessageOutput
 from starkware.cairo.dex.vault_update import L2VaultState
 from starkware.cairo.dex.volition import output_volition_data
 
-const ONCHAIN_DATA_NONE = 0
-const ONCHAIN_DATA_VAULTS = 1
-
 struct DexOutput:
-    member initial_vault_root : felt
-    member final_vault_root : felt
+    member global_config_code : felt
+    member initial_validium_vault_root : felt
+    member final_validium_vault_root : felt
+    member initial_rollup_vault_root : felt
+    member final_rollup_vault_root : felt
     member initial_order_root : felt
     member final_order_root : felt
     member global_expiration_timestamp : felt
-    member vault_tree_height : felt
+    member validium_vault_tree_height : felt
+    member rollup_vault_tree_height : felt
     member order_tree_height : felt
-    member onchain_data_version : felt
     member n_modifications : felt
     member n_conditional_transfers : felt
     member n_l1_vault_updates : felt
@@ -33,24 +37,32 @@ struct DexOutput:
 end
 
 func main(
-        output_ptr : felt*, pedersen_ptr : HashBuiltin*, range_check_ptr,
-        ecdsa_ptr : SignatureBuiltin*) -> (
-        output_ptr : felt*, pedersen_ptr : HashBuiltin*, range_check_ptr,
-        ecdsa_ptr : SignatureBuiltin*):
-    # Create the globals struct.
+    output_ptr : felt*, pedersen_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*
+) -> (
+    output_ptr : felt*, pedersen_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*
+):
+    # Create the globals struct and initialize the unique minting bit.
     let dex_output = cast(output_ptr, DexOutput*)
+    alloc_locals
+    local unique_minting_enforced : felt
     %{
         from starkware.cairo.dex.objects import DexProgramInput
         dex_program_input = DexProgramInput.Schema().load(program_input)
-        ids.dex_output.vault_tree_height = dex_program_input.vault_tree_height
+        ids.unique_minting_enforced = dex_program_input.general_config.unique_minting_enforced
+        ids.dex_output.validium_vault_tree_height = dex_program_input.validium_vault_tree_height
+        ids.dex_output.rollup_vault_tree_height = dex_program_input.rollup_vault_tree_height
         ids.dex_output.order_tree_height = dex_program_input.order_tree_height
         ids.dex_output.global_expiration_timestamp = dex_program_input.global_expiration_timestamp
+        ids.unique_minting_enforced = dex_program_input.general_config.unique_minting_enforced
     %}
-    alloc_locals
-    let (dex_context_ptr) = make_dex_context(
-        vault_tree_height=dex_output.vault_tree_height,
-        order_tree_height=dex_output.order_tree_height,
-        global_expiration_timestamp=dex_output.global_expiration_timestamp)
+    let (dex_context_ptr : DexContext*) = make_dex_context(
+        general_config=GeneralConfig(
+        validium_tree_height=dex_output.validium_vault_tree_height,
+        rollup_tree_height=dex_output.rollup_vault_tree_height,
+        orders_tree_height=dex_output.order_tree_height,
+        unique_minting_enforced=unique_minting_enforced),
+        global_expiration_timestamp=dex_output.global_expiration_timestamp,
+    )
 
     local vault_dict : DictAccess*
     local order_dict : DictAccess*
@@ -80,8 +92,6 @@ func main(
 
         ids.vault_dict = segments.add()
         ids.order_dict = segments.add()
-        ids.dex_output.initial_vault_root = int.from_bytes(
-            dex_program_input.initial_vault_root, 'big')
 
         # initial_dict is a mapping from every L1 vault hash key to its minimal initial balance.
         # l1_vault_hash_key_to_explicit is a mapping from every L1 vault hash key (the key used in
@@ -117,7 +127,8 @@ func main(
         vault_dict=vault_dict,
         l1_vault_dict=l1_vault_dict,
         order_dict=order_dict,
-        dex_context_ptr=dex_context_ptr)
+        dex_context_ptr=dex_context_ptr,
+    )
     let range_check_ptr = executed_batch.range_check_ptr
     %{ vm_exit_scope() %}
 
@@ -127,6 +138,12 @@ func main(
     # Store conditional transfer and L1 order signature end pointer.
     local conditional_transfer_end_ptr : felt* = executed_batch.conditional_transfer_ptr
     local l1_order_message_end_ptr : felt* = executed_batch.l1_order_message_ptr
+
+    # Output the encoded general config.
+    let (encoded_config : felt) = encode_general_config(
+        general_config=&(dex_context_ptr.general_config)
+    )
+    assert dex_output.global_config_code = encoded_config
 
     # Calculate n_modifications in the output from the number of modifications in the output.
     assert dex_output.n_modifications = (
@@ -162,12 +179,14 @@ func main(
         let (squash_vault_dict_ret) = squash_dict(
             dict_accesses=vault_dict,
             dict_accesses_end=executed_batch.vault_dict,
-            squashed_dict=squashed_vault_dict)
+            squashed_dict=squashed_vault_dict,
+        )
         local squashed_vault_dict_segment_size = squash_vault_dict_ret - squashed_vault_dict
 
         # Squash the l1_vault_dict.
         let (local squashed_l1_vault_dict, local squash_l1_vault_dict_ret) = dict_squash(
-            dict_accesses_start=l1_vault_dict, dict_accesses_end=l1_vault_dict_end)
+            dict_accesses_start=l1_vault_dict, dict_accesses_end=l1_vault_dict_end
+        )
 
         assert dex_output.n_l1_vault_updates = (
             squash_l1_vault_dict_ret - squashed_l1_vault_dict) / DictAccess.SIZE
@@ -178,97 +197,131 @@ func main(
         let (squash_order_dict_ret) = squash_dict(
             dict_accesses=order_dict,
             dict_accesses_end=order_dict_end,
-            squashed_dict=squashed_order_dict)
+            squashed_dict=squashed_order_dict,
+        )
     end
     local squashed_order_dict_segment_size = squash_order_dict_ret - squashed_order_dict
-    local range_check_ptr_after_squash_order_dict = range_check_ptr
+    # Split the squashed dict to validium and rollup vaults.
+    with range_check_ptr:
+        let (local squashed_rollup_vault_dict : DictAccess*) = search_sorted_lower(
+            array_ptr=squashed_vault_dict,
+            elm_size=DictAccess.SIZE,
+            n_elms=squashed_vault_dict_segment_size / DictAccess.SIZE,
+            key=ROLLUP_VAULT_BIT,
+        )
+    end
 
-    # The squashed_vault_dict holds pointers to vault states instead of vault tree leaf values.
-    # Call hash_vault_ptr_dict to obtain a new dict that can be passed to merkle_multi_update.
-    local hashed_vault_dict : DictAccess*
-    %{ ids.hashed_vault_dict = segments.add() %}
+    local range_check_ptr = range_check_ptr
+    local squashed_validium_vault_dict : DictAccess* = squashed_vault_dict
+    local squashed_validium_vault_dict_segment_size = (
+        squashed_rollup_vault_dict - squashed_validium_vault_dict)
+    local squashed_rollup_vault_dict_segment_size = (
+        squashed_vault_dict_segment_size - squashed_validium_vault_dict_segment_size)
+
+    # The squashed vault dicts holds pointers to vault states instead of vault tree leaf values.
+    # Call hash_vault_ptr_dict to obtain new dicts that can be passed to merkle_multi_update.
+    local hashed_validium_vault_dict : DictAccess*
+    %{ ids.hashed_validium_vault_dict = segments.add() %}
     let (hash_ptr) = hash_vault_ptr_dict(
         hash_ptr=hash_ptr_after_execute_batch,
-        vault_ptr_dict=squashed_vault_dict,
-        n_entries=squashed_vault_dict_segment_size / DictAccess.SIZE,
-        vault_hash_dict=hashed_vault_dict)
+        vault_ptr_dict=squashed_validium_vault_dict,
+        n_entries=squashed_validium_vault_dict_segment_size / DictAccess.SIZE,
+        vault_hash_dict=hashed_validium_vault_dict,
+    )
+
+    # Adjusts rollup vault ids to rollup tree leaf indices.
+    local adjusted_rollup_vault_dict : DictAccess*
+    %{ ids.adjusted_rollup_vault_dict = segments.add() %}
+    adjust_vault_dict_keys(
+        vault_ptr_dict=squashed_rollup_vault_dict,
+        n_entries=squashed_rollup_vault_dict_segment_size / DictAccess.SIZE,
+        adjusted_vault_dict=adjusted_rollup_vault_dict,
+        key_subtrahend=ROLLUP_VAULT_BIT,
+    )
+
+    local hashed_rollup_vault_dict : DictAccess*
+    %{ ids.hashed_rollup_vault_dict = segments.add() %}
+    let (hash_ptr) = hash_vault_ptr_dict(
+        hash_ptr=hash_ptr,
+        vault_ptr_dict=adjusted_rollup_vault_dict,
+        n_entries=squashed_rollup_vault_dict_segment_size / DictAccess.SIZE,
+        vault_hash_dict=hashed_rollup_vault_dict,
+    )
 
     %{
-        def as_int(x):
-          return int.from_bytes(x, 'big')
+        from starkware.python.utils import from_bytes
 
         preimage = {
-          as_int(root): (as_int(left_child), as_int(right_child))
-          for root, left_child, right_child in dex_program_input.merkle_facts
+            int(root): preimage_fields
+            for root, *preimage_fields in dex_program_input.merkle_facts
         }
 
-        ids.dex_output.initial_vault_root = int.from_bytes(
-            dex_program_input.initial_vault_root, 'big')
-        ids.dex_output.final_vault_root = int.from_bytes(
-            dex_program_input.final_vault_root, 'big')
+        ids.dex_output.initial_validium_vault_root = from_bytes(
+            dex_program_input.initial_validium_vault_root)
+        ids.dex_output.final_validium_vault_root = from_bytes(
+            dex_program_input.final_validium_vault_root)
 
-        ids.dex_output.initial_order_root = int.from_bytes(
-            dex_program_input.initial_order_root, 'big')
-        ids.dex_output.final_order_root = int.from_bytes(
-            dex_program_input.final_order_root, 'big')
+        ids.dex_output.initial_rollup_vault_root = from_bytes(
+            dex_program_input.initial_rollup_vault_root)
+        ids.dex_output.final_rollup_vault_root = from_bytes(
+            dex_program_input.final_rollup_vault_root)
+
+        ids.dex_output.initial_order_root = from_bytes(dex_program_input.initial_order_root)
+        ids.dex_output.final_order_root = from_bytes(dex_program_input.final_order_root)
 
         vm_enter_scope({'preimage': preimage})
     %}
 
-    with hash_ptr:
-        # Verify hashed_vault_dict consistency with the vault merkle root.
+    with hash_ptr, range_check_ptr:
+        # Verify hashed_validium_vault_dict consistency with the merkle root.
         merkle_multi_update(
-            update_ptr=hashed_vault_dict,
-            n_updates=squashed_vault_dict_segment_size / DictAccess.SIZE,
-            height=dex_output.vault_tree_height,
-            prev_root=dex_output.initial_vault_root,
-            new_root=dex_output.final_vault_root)
+            update_ptr=hashed_validium_vault_dict,
+            n_updates=squashed_validium_vault_dict_segment_size / DictAccess.SIZE,
+            height=dex_output.validium_vault_tree_height,
+            prev_root=dex_output.initial_validium_vault_root,
+            new_root=dex_output.final_validium_vault_root,
+        )
 
-        # Verify squashed_order_dict consistency with the order merkle root.
+        # Verify hashed_rollup_vault_dict consistency with the merkle root.
         merkle_multi_update(
+            update_ptr=hashed_rollup_vault_dict,
+            n_updates=squashed_rollup_vault_dict_segment_size / DictAccess.SIZE,
+            height=dex_output.rollup_vault_tree_height,
+            prev_root=dex_output.initial_rollup_vault_root,
+            new_root=dex_output.final_rollup_vault_root,
+        )
+
+        # Verify squashed_order_dict consistency with the order patricia root.
+        patricia_update(
             update_ptr=squashed_order_dict,
             n_updates=squashed_order_dict_segment_size / DictAccess.SIZE,
             height=dex_output.order_tree_height,
             prev_root=dex_output.initial_order_root,
-            new_root=dex_output.final_order_root)
+            new_root=dex_output.final_order_root,
+        )
     end
     %{ vm_exit_scope() %}
 
     # Output L1 vault updates.
     assert l1_vault_update_output_ptr = cast(conditional_transfer_end_ptr, L1VaultOutput*)
-    let range_check_ptr = range_check_ptr_after_squash_order_dict
     output_l1_vault_update_data{
         range_check_ptr=range_check_ptr,
         pedersen_ptr=hash_ptr,
-        l1_vault_ptr=l1_vault_update_output_ptr}(
-        squashed_dict=squashed_l1_vault_dict, squashed_dict_end_ptr=squash_l1_vault_dict_ret)
+        l1_vault_ptr=l1_vault_update_output_ptr,
+    }(squashed_dict=squashed_l1_vault_dict, squashed_dict_end_ptr=squash_l1_vault_dict_ret)
     assert l1_order_message_ptr = (
         cast(l1_vault_update_output_ptr, L1OrderMessageOutput*))
     let output_ptr : felt* = l1_order_message_end_ptr
     local pedersen_ptr_end : HashBuiltin* = hash_ptr
 
-    # Output onchain data availability if necessary.
-    %{
-        assert dex_program_input.onchain_data_version in [
-            ids.ONCHAIN_DATA_NONE, ids.ONCHAIN_DATA_VAULTS], \
-            'Onchain-data version is not supported.'
-        ids.dex_output.onchain_data_version = dex_program_input.onchain_data_version
-    %}
-    if dex_output.onchain_data_version == ONCHAIN_DATA_NONE:
-        return (
-            output_ptr=output_ptr,
-            pedersen_ptr=pedersen_ptr_end,
-            range_check_ptr=range_check_ptr,
-            ecdsa_ptr=ecdsa_ptr_after_execute_batch)
-    end
-
-    assert dex_output.onchain_data_version = ONCHAIN_DATA_VAULTS
+    # Output rollup data (onchain data availability).
     %{ onchain_data_start = ids.output_ptr %}
     let (output_ptr, range_check_ptr) = output_volition_data(
         output_ptr=output_ptr,
         range_check_ptr=range_check_ptr,
-        squashed_vault_dict=squashed_vault_dict,
-        n_updates=squashed_vault_dict_segment_size / DictAccess.SIZE)
+        squashed_vault_dict=adjusted_rollup_vault_dict,
+        n_updates=squashed_rollup_vault_dict_segment_size / DictAccess.SIZE,
+    )
     %{
         from starkware.python.math_utils import div_ceil
         onchain_data_size = ids.output_ptr - onchain_data_start
@@ -305,5 +358,6 @@ func main(
         output_ptr=output_ptr,
         pedersen_ptr=pedersen_ptr_end,
         range_check_ptr=range_check_ptr,
-        ecdsa_ptr=ecdsa_ptr_after_execute_batch)
+        ecdsa_ptr=ecdsa_ptr_after_execute_batch,
+    )
 end

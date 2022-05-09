@@ -9,9 +9,8 @@ from starkware.cairo.dex.vault_update import l2_vault_update_balances
 # and writes the requester_stark_key to the program output.
 # Assumptions: keys in the vault_dict are range-checked to be < VAULT_SHIFT.
 func execute_false_full_withdrawal(
-        modification_ptr : ModificationOutput*, dex_context_ptr : DexContext*,
-        vault_dict : DictAccess*) -> (
-        vault_dict : DictAccess*, modification_ptr : ModificationOutput*):
+    modification_ptr : ModificationOutput*, dex_context_ptr : DexContext*, vault_dict : DictAccess*
+) -> (vault_dict : DictAccess*, modification_ptr : ModificationOutput*):
     let dex_context : DexContext* = dex_context_ptr
     let output : ModificationOutput* = modification_ptr
 
@@ -48,7 +47,8 @@ func execute_false_full_withdrawal(
         stark_key=stark_key,
         token_id=token_id,
         vault_index=vault_index,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
 
     # Guess the requester_stark_key, write it to the output and make sure it's not the same as the
     # stark_key.
@@ -61,5 +61,6 @@ func execute_false_full_withdrawal(
 
     return (
         vault_dict=vault_dict + DictAccess.SIZE,
-        modification_ptr=modification_ptr + ModificationOutput.SIZE)
+        modification_ptr=modification_ptr + ModificationOutput.SIZE,
+    )
 end

@@ -42,17 +42,24 @@ end
 
 # Update the fee source vault. Might be an L1 or an L2 vault.
 func update_fee_src_vault{
-        pedersen_ptr : HashBuiltin*, range_check_ptr, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*}(
-        user_public_key, fee_info_user : FeeInfoUser*, fee_info_exchange : FeeInfoExchange*,
-        use_l1_src_vault):
+    pedersen_ptr : HashBuiltin*,
+    range_check_ptr,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+}(
+    user_public_key,
+    fee_info_user : FeeInfoUser*,
+    fee_info_exchange : FeeInfoExchange*,
+    use_l1_src_vault,
+):
     if use_l1_src_vault != 0:
         # Source vault is an L1 vault.
         l1_vault_update_diff(
             diff=-fee_info_exchange.fee_taken,
             eth_key=user_public_key,
             token_id=fee_info_user.token_id,
-            vault_index=fee_info_user.source_vault_id)
+            vault_index=fee_info_user.source_vault_id,
+        )
         return ()
     end
 
@@ -64,7 +71,8 @@ func update_fee_src_vault{
         stark_key=user_public_key,
         token_id=fee_info_user.token_id,
         vault_index=fee_info_user.source_vault_id,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
     let vault_dict = vault_dict + DictAccess.SIZE
     return ()
 end
@@ -74,15 +82,22 @@ end
 # Hint arguments:
 # fee_witness - a FeeWitness with the fee vaults data.
 func update_fee_vaults{
-        pedersen_ptr : HashBuiltin*, range_check_ptr, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*}(
-        user_public_key, fee_info_user : FeeInfoUser*, fee_info_exchange : FeeInfoExchange*,
-        use_l1_src_vault):
+    pedersen_ptr : HashBuiltin*,
+    range_check_ptr,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+}(
+    user_public_key,
+    fee_info_user : FeeInfoUser*,
+    fee_info_exchange : FeeInfoExchange*,
+    use_l1_src_vault,
+):
     update_fee_src_vault(
         user_public_key=user_public_key,
         fee_info_user=fee_info_user,
         fee_info_exchange=fee_info_exchange,
-        use_l1_src_vault=use_l1_src_vault)
+        use_l1_src_vault=use_l1_src_vault,
+    )
 
     # Adding fee_info_exchange.fee_taken to fee destination vault (which is always an L2 vault).
     %{ vault_update_witness = fee_witness.destination_fee_witness %}
@@ -92,7 +107,8 @@ func update_fee_vaults{
         stark_key=fee_info_exchange.destination_stark_key,
         token_id=fee_info_user.token_id,
         vault_index=fee_info_exchange.destination_vault_id,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
     let vault_dict = vault_dict + DictAccess.SIZE
     return ()
 end

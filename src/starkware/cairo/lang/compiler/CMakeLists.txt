@@ -3,6 +3,7 @@ python_venv(cairo_lang_compile_venv
 
     LIBS
     pip_cairo_lang
+    pip_setuptools
 )
 
 python_exe(cairo_compile_exe

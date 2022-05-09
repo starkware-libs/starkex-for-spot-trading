@@ -6,10 +6,18 @@ from starkware.cairo.common.dict_access import DictAccess
 from starkware.cairo.common.set import set_add
 from starkware.cairo.common.signature import verify_ecdsa_signature
 from starkware.cairo.dex.dex_constants import (
-    BALANCE_BOUND, EXPIRATION_TIMESTAMP_BOUND, NONCE_BOUND, PackedOrderMsg)
+    BALANCE_BOUND,
+    EXPIRATION_TIMESTAMP_BOUND,
+    NONCE_BOUND,
+    PackedOrderMsg,
+)
 from starkware.cairo.dex.dex_context import DexContext
 from starkware.cairo.dex.fee import (
-    FeeInfoExchange, FeeInfoUser, order_validate_fee, update_fee_vaults)
+    FeeInfoExchange,
+    FeeInfoUser,
+    order_validate_fee,
+    update_fee_vaults,
+)
 from starkware.cairo.dex.l1_vault_update import l1_vault_update_diff
 from starkware.cairo.dex.message_hashes import order_and_transfer_hash_31
 from starkware.cairo.dex.message_l1_order import L1OrderMessageOutput, serialize_l1_limit_order
@@ -20,7 +28,8 @@ from starkware.cairo.dex.verify_order_id import verify_order_id
 # A different message format is used to compute the hash depending on whether or not a fee object is
 # part of the order.
 func get_order_hash{pedersen_ptr : HashBuiltin*}(
-        limit_order : ExchangeLimitOrder*, fee_info_exchange : FeeInfoExchange*) -> (message_hash):
+    limit_order : ExchangeLimitOrder*, fee_info_exchange : FeeInfoExchange*
+) -> (message_hash):
     if fee_info_exchange != 0:
         # Order with fee - compute limit order hash using 64 bit vault id format.
         let (message_hash_64) = limit_order_hash(limit_order=limit_order)
@@ -38,7 +47,8 @@ func get_order_hash{pedersen_ptr : HashBuiltin*}(
         token1_or_pub_key=limit_order.asset_id_buy,
         nonce=limit_order.base.nonce,
         expiration_timestamp=limit_order.base.expiration_timestamp,
-        condition=0)
+        condition=0,
+    )
     return (message_hash=message_hash_31)
 end
 
@@ -49,10 +59,16 @@ end
 # fee_witness - the appropriate FeeWitness object (needed if fee_info_exchange != 0).
 #   Used in update_fee_vaults.
 func validate_and_update_fee_vaults{
-        pedersen_ptr : HashBuiltin*, range_check_ptr, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*}(
-        fee_info_exchange : FeeInfoExchange*, use_l1_vaults, amount_bought,
-        limit_order : ExchangeLimitOrder*):
+    pedersen_ptr : HashBuiltin*,
+    range_check_ptr,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+}(
+    fee_info_exchange : FeeInfoExchange*,
+    use_l1_vaults,
+    amount_bought,
+    limit_order : ExchangeLimitOrder*,
+):
     if fee_info_exchange == 0:
         # When fee_info_exchange == 0 (no fee object in order), no fee is taken.
         return ()
@@ -68,12 +84,14 @@ func validate_and_update_fee_vaults{
         fee_taken=fee_info_exchange.fee_taken,
         fee_limit=fee_info_user.fee_limit,
         amount_bought=amount_bought,
-        order_buy=limit_order.amount_buy)
+        order_buy=limit_order.amount_buy,
+    )
     update_fee_vaults(
         user_public_key=limit_order.base.public_key,
         fee_info_user=fee_info_user,
         fee_info_exchange=fee_info_exchange,
-        use_l1_src_vault=use_l1_vaults)
+        use_l1_src_vault=use_l1_vaults,
+    )
     return ()
 end
 
@@ -85,11 +103,20 @@ end
 # Hint argument:
 # order_witness - the witness for the executed order.
 func update_vaults_and_verify_signature{
-        pedersen_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        vault_dict : DictAccess*, l1_vault_dict : DictAccess*,
-        l1_order_message_ptr : L1OrderMessageOutput*}(
-        is_l1_order, amount_sold, amount_bought, limit_order : ExchangeLimitOrder*,
-        l1_order_message_start_ptr : L1OrderMessageOutput*, message_hash):
+    pedersen_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+    l1_order_message_ptr : L1OrderMessageOutput*,
+}(
+    is_l1_order,
+    amount_sold,
+    amount_bought,
+    limit_order : ExchangeLimitOrder*,
+    l1_order_message_start_ptr : L1OrderMessageOutput*,
+    message_hash,
+):
     alloc_locals
     if is_l1_order != 0:
         # Add the L1 order message to the messages output set. The verification of the message is
@@ -99,7 +126,8 @@ func update_vaults_and_verify_signature{
         set_add{set_end_ptr=set_end_ptr}(
             set_ptr=l1_order_message_start_ptr,
             elm_size=L1OrderMessageOutput.SIZE,
-            elm_ptr=current_order_message_ptr)
+            elm_ptr=current_order_message_ptr,
+        )
         local l1_order_message_ptr : L1OrderMessageOutput* = cast(
             set_end_ptr, L1OrderMessageOutput*)
 
@@ -108,14 +136,16 @@ func update_vaults_and_verify_signature{
             diff=-amount_sold,
             eth_key=limit_order.base.public_key,
             token_id=limit_order.asset_id_sell,
-            vault_index=limit_order.vault_sell)
+            vault_index=limit_order.vault_sell,
+        )
 
         # Update the L1 buy vault with the bought amount.
         l1_vault_update_diff(
             diff=amount_bought,
             eth_key=limit_order.base.public_key,
             token_id=limit_order.asset_id_buy,
-            vault_index=limit_order.vault_buy)
+            vault_index=limit_order.vault_buy,
+        )
         return ()
     end
 
@@ -129,7 +159,8 @@ func update_vaults_and_verify_signature{
         stark_key=limit_order.base.public_key,
         token_id=limit_order.asset_id_sell,
         vault_index=limit_order.vault_sell,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
 
     # Update the vault tree with the new balance of the L2 buy vault.
     %{ vault_update_witness = order_witness.buy_witness %}
@@ -139,7 +170,8 @@ func update_vaults_and_verify_signature{
         stark_key=limit_order.base.public_key,
         token_id=limit_order.asset_id_buy,
         vault_index=limit_order.vault_buy,
-        vault_change_ptr=vault_dict + DictAccess.SIZE)
+        vault_change_ptr=vault_dict + DictAccess.SIZE,
+    )
     let vault_dict = vault_dict + 2 * DictAccess.SIZE
 
     # Signature verification.
@@ -147,7 +179,8 @@ func update_vaults_and_verify_signature{
         message=message_hash,
         public_key=limit_order.base.public_key,
         signature_r=limit_order.base.signature_r,
-        signature_s=limit_order.base.signature_s)
+        signature_s=limit_order.base.signature_s,
+    )
     return ()
 end
 
@@ -171,14 +204,28 @@ end
 # * 0 <= amount_sold, amount_bought < BALANCE_BOUND.
 # * 0 <= global_expiration_timestamp, and it has not expired yet.
 func execute_limit_order(
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        limit_order : ExchangeLimitOrder*, l1_order_message_ptr : L1OrderMessageOutput*,
-        l1_order_message_start_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*, order_dict : DictAccess*, amount_sold, amount_bought,
-        fee_info_exchange : FeeInfoExchange*, dex_context_ptr : DexContext*) -> (
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        l1_order_message_ptr : L1OrderMessageOutput*, vault_dict : DictAccess*,
-        l1_vault_dict : DictAccess*, order_dict : DictAccess*):
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    limit_order : ExchangeLimitOrder*,
+    l1_order_message_ptr : L1OrderMessageOutput*,
+    l1_order_message_start_ptr : L1OrderMessageOutput*,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+    amount_sold,
+    amount_bought,
+    fee_info_exchange : FeeInfoExchange*,
+    dex_context_ptr : DexContext*,
+) -> (
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    l1_order_message_ptr : L1OrderMessageOutput*,
+    vault_dict : DictAccess*,
+    l1_vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+):
     # Local variables.
     local order_id
     local prev_fulfilled_amount
@@ -254,7 +301,8 @@ func execute_limit_order(
 
     let range_check_ptr = range_check_ptr + 10
     let (local message_hash) = get_order_hash{pedersen_ptr=hash_ptr}(
-        limit_order=limit_order, fee_info_exchange=fee_info_exchange)
+        limit_order=limit_order, fee_info_exchange=fee_info_exchange
+    )
 
     %{
         # Assert previous hash computation.
@@ -271,13 +319,15 @@ func execute_limit_order(
         ecdsa_ptr=ecdsa_ptr,
         vault_dict=vault_dict,
         l1_vault_dict=l1_vault_dict,
-        l1_order_message_ptr=l1_order_message_ptr}(
+        l1_order_message_ptr=l1_order_message_ptr,
+    }(
         is_l1_order=is_l1_order,
         amount_sold=amount_sold,
         amount_bought=amount_bought,
         limit_order=limit_order,
         l1_order_message_start_ptr=l1_order_message_start_ptr,
-        message_hash=message_hash)
+        message_hash=message_hash,
+    )
     local ecdsa_ptr_end : SignatureBuiltin* = ecdsa_ptr
     local l1_order_message_ptr_end : L1OrderMessageOutput* = l1_order_message_ptr
 
@@ -286,15 +336,16 @@ func execute_limit_order(
         pedersen_ptr=hash_ptr,
         range_check_ptr=range_check_ptr,
         vault_dict=vault_dict,
-        l1_vault_dict=l1_vault_dict}(
+        l1_vault_dict=l1_vault_dict,
+    }(
         fee_info_exchange=fee_info_exchange,
         use_l1_vaults=is_l1_order,
         amount_bought=amount_bought,
-        limit_order=limit_order)
+        limit_order=limit_order,
+    )
 
     # Verify order id.
-    let (range_check_ptr) = verify_order_id(
-        range_check_ptr=range_check_ptr, message_hash=message_hash, order_id=order_id)
+    verify_order_id{range_check_ptr=range_check_ptr}(message_hash=message_hash, order_id=order_id)
 
     return (
         hash_ptr=hash_ptr,
@@ -303,5 +354,6 @@ func execute_limit_order(
         l1_order_message_ptr=l1_order_message_ptr_end,
         vault_dict=vault_dict,
         l1_vault_dict=l1_vault_dict,
-        order_dict=order_dict + DictAccess.SIZE)
+        order_dict=order_dict + DictAccess.SIZE,
+    )
 end

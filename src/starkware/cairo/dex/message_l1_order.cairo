@@ -1,5 +1,9 @@
 from services.exchange.cairo.definitions.constants import (
-    AMOUNT_UPPER_BOUND, EXPIRATION_TIMESTAMP_UPPER_BOUND, NONCE_UPPER_BOUND, VAULT_ID_UPPER_BOUND)
+    AMOUNT_UPPER_BOUND,
+    EXPIRATION_TIMESTAMP_UPPER_BOUND,
+    NONCE_UPPER_BOUND,
+    VAULT_ID_UPPER_BOUND,
+)
 from services.exchange.cairo.signature_message_hashes import ExchangeLimitOrder
 from starkware.cairo.common.registers import get_fp_and_pc
 
@@ -29,7 +33,8 @@ end
 # Hint argument:
 # order - the L1 order to serialize.
 func serialize_l1_limit_order(limit_order : ExchangeLimitOrder*) -> (
-        l1_order_message : L1OrderMessageOutput*):
+    l1_order_message : L1OrderMessageOutput*
+):
     alloc_locals
     %{
         from common.objects.transaction.common_transaction import OrderL1
@@ -52,7 +57,7 @@ func serialize_l1_limit_order(limit_order : ExchangeLimitOrder*) -> (
     let packed_message1 = packed_message1 * VAULT_ID_UPPER_BOUND + limit_order.vault_buy
     let packed_message1 = (
         packed_message1 * EXPIRATION_TIMESTAMP_UPPER_BOUND + limit_order.base.expiration_timestamp)
-    let packed_message1 = packed_message1 * %[2**17%]
+    let packed_message1 = packed_message1 * (2 ** 17)
     assert l1_order_message.packed_message1 = packed_message1
 
     l1_order_message.token_sell = limit_order.asset_id_sell

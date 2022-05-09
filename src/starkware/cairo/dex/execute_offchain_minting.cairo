@@ -1,47 +1,65 @@
+from services.exchange.cairo.definitions.constants import MINT_TREE_INDEX_SALT
+from starkware.cairo.common.cairo_builtins import HashBuiltin
 from starkware.cairo.common.dict_access import DictAccess
-from starkware.cairo.common.math import assert_nn, assert_nn_le
-from starkware.cairo.dex.dex_constants import MINTING_BIT, RANGE_CHECK_BOUND, TOKEN_ID_BOUND
+from starkware.cairo.common.hash import hash2
+from starkware.cairo.common.math import assert_lt_felt
+from starkware.cairo.dex.dex_constants import MINTABLE_ASSET_ID_BOUND, MINTING_BIT
 from starkware.cairo.dex.dex_context import DexContext
 from starkware.cairo.dex.vault_update import l2_vault_update_diff
+
+# Compute the tree index of a mint transaction.
+func mint_index{hash_ptr : HashBuiltin*}(asset_id : felt) -> (index : felt):
+    return hash2(x=MINT_TREE_INDEX_SALT, y=asset_id)
+end
 
 # Executes an offchain minting which adds to the balance in a single vault.
 # Asserts that the corresponding token is mintable - the minting bit is on.
 func execute_offchain_minting(
-        range_check_ptr, dex_context_ptr : DexContext*, vault_dict : DictAccess*) -> (
-        range_check_ptr, vault_dict : DictAccess*):
-    # Bound for the high part of the token id.
-    const HIGH_PART_BOUND = TOKEN_ID_BOUND / RANGE_CHECK_BOUND
-
-    local high_part
-    local low_part
+    range_check_ptr,
+    hash_ptr : HashBuiltin*,
+    dex_context_ptr : DexContext*,
+    vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+) -> (range_check_ptr, hash_ptr : HashBuiltin*, vault_dict : DictAccess*, order_dict : DictAccess*):
+    local token_id
     alloc_locals
 
-    # Validate that the minting bit is on in the token_id.
     %{
-        token_id = mint_tx.token_id
-
-        # Write the token id as a 251 bit number (TOKEN_ID_BOUND=2^250 + 1 bit):
-        # +-----------------+------------------+------------LSB--+
-        # | mint_bit (1b)   | high_part (122b) | low_part (128b) |
-        # +-----------------+------------------+-----------------+     .
-        assert ids.TOKEN_ID_BOUND <= token_id < 2*ids.TOKEN_ID_BOUND, \
-            'Token id must be a 251-bit integer with the 251-bit on.'
-        # Remaining bit from msb and lsb.
-        leftover = token_id - ids.TOKEN_ID_BOUND
-        ids.high_part = leftover // ids.RANGE_CHECK_BOUND
-        ids.low_part  = leftover % ids.RANGE_CHECK_BOUND
+        ids.token_id = mint_tx.token_id
+        assert mint_tx.diff == 1, f"Illegal mint amount requested: {mint_tx.diff}."
     %}
 
-    # The following guarantees that: high_part * RANGE_CHECK_BOUND + low_part < 2^250.
-    # Verify that 0 <= low_part < 2^128.
-    assert_nn{range_check_ptr=range_check_ptr}(low_part)
-    # Verify that 0 <= high_part < 2^(250-128).
-    assert_nn_le{range_check_ptr=range_check_ptr}(high_part, HIGH_PART_BOUND - 1)
+    # Validate that the minting bit is on in the token_id, that the token_id without the mint bit is
+    # in the valid range, and that the control bits are zero.
+    # If we write the token id as a 251 bit number we get:
+    # +-----------------+----------------------------+-----LSB----+
+    # | mint_bit (1b)   | zeros (control bits) (10b) |   (240b)   |
+    # +-----------------+----------------------------+------------+
+    # It is enough to subtract the minting bit from the token_id and assert the result is less than
+    # 2^240.
+    let token_id_without_minting_bit = token_id - MINTING_BIT
+    with range_check_ptr:
+        assert_lt_felt(token_id_without_minting_bit, MINTABLE_ASSET_ID_BOUND)
+    end
 
-    # Difference must be nonnegative.
-    local diff
-    %{ ids.diff = mint_tx.diff %}
-    assert_nn{range_check_ptr=range_check_ptr}(diff)
+    # The minted amount must be 1.
+    local minted_amount = 1
+
+    # Update orders dict if unique minting is enforced.
+    local order_dict_offset : felt
+    if dex_context_ptr.general_config.unique_minting_enforced == 1:
+        with hash_ptr:
+            let (index : felt) = mint_index(asset_id=token_id)
+        end
+        assert order_dict.key = index
+        assert order_dict.prev_value = 0
+        assert order_dict.new_value = minted_amount
+        assert order_dict_offset = DictAccess.SIZE
+        tempvar hash_ptr = hash_ptr
+    else:
+        assert order_dict_offset = 0
+        tempvar hash_ptr = hash_ptr
+    end
 
     # Validate the vault change.
     local vault_id
@@ -57,11 +75,17 @@ func execute_offchain_minting(
 
     let (range_check_ptr) = l2_vault_update_diff(
         range_check_ptr=range_check_ptr,
-        diff=diff,
+        diff=minted_amount,
         stark_key=stark_key,
-        token_id=MINTING_BIT + high_part * RANGE_CHECK_BOUND + low_part,
+        token_id=token_id,
         vault_index=vault_id,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
 
-    return (range_check_ptr=range_check_ptr, vault_dict=vault_dict + DictAccess.SIZE)
+    return (
+        range_check_ptr=range_check_ptr,
+        hash_ptr=hash_ptr,
+        vault_dict=vault_dict + DictAccess.SIZE,
+        order_dict=order_dict + order_dict_offset,
+    )
 end

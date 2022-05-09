@@ -68,6 +68,8 @@ class ExpressionString:
         and '5^7' will not require parentheses, and the result will start with '5 * 7 * ...' or
         '5^7 * ...'.
         """
+        if format_spec == "":
+            format_spec = "LOWEST"
         return self._maybe_add_parentheses(OperatorPrecedence[format_spec])
 
     def __str__(self):
@@ -98,11 +100,28 @@ class ExpressionString:
         # For the two expressions (a ** b) ** c and a ** (b ** c), parentheses will always be added.
         return ExpressionString(f"{self:HIGHEST}^{other:HIGHEST}", OperatorPrecedence.POW)
 
+    def double_star_pow(self, other):
+        """
+        Same as self ** other, except that the text is using " ** " instead of "^".
+        """
+        other = to_expr_string(other)
+        # For the two expressions (a ** b) ** c and a ** (b ** c), parentheses will always be added.
+        return ExpressionString(f"{self:HIGHEST} ** {other:HIGHEST}", OperatorPrecedence.POW)
+
     def __neg__(self):
+        # Use OperatorPrecedence.LOWEST (even though the actual precedence of the unary minus is
+        # higher) so that parentheses will be added even when lower-precedence operators are used.
+        # For example: `(-x) + y`.
         return ExpressionString(f"-{self:ADDROF}", OperatorPrecedence.LOWEST)
 
     def address_of(self):
         return ExpressionString(f"&{self:ADDROF}", OperatorPrecedence.ADDROF)
+
+    def operator_new(self):
+        # Use OperatorPrecedence.LOWEST (even though the actual precedence of the new operator is
+        # higher) so that parentheses will be added even when lower-precedence operators are used.
+        # For example: `(new x) + y`.
+        return ExpressionString(f"new {self:ADDROF}", OperatorPrecedence.LOWEST)
 
     def prepend(self, txt):
         """

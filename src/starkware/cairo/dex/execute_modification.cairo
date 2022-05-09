@@ -4,8 +4,8 @@ from starkware.cairo.dex.dex_context import DexContext
 from starkware.cairo.dex.vault_update import l2_vault_update_balances
 
 namespace ModificationConstants:
-    const BALANCE_SHIFT = %[ 2**64 %]
-    const VAULT_SHIFT = %[ 2**31 %]
+    const BALANCE_SHIFT = 2 ** 64
+    const VAULT_SHIFT = 2 ** 64
     const FULL_WITHDRAWAL_SHIFT = BALANCE_SHIFT * VAULT_SHIFT
 end
 
@@ -18,7 +18,7 @@ struct ModificationOutput:
     # A packed field that consists of the balances and vault_id.
     # The format is as follows:
     # +--------------------+------------------+----------------LSB-+
-    # | full_withdraw (1b) |  vault_idx (31b) | balance_diff (64b) |
+    # | full_withdraw (1b) |  vault_idx (64b) | balance_diff (64b) |
     # +--------------------+------------------+--------------------+
     # where balance_diff is represented using a 2**63 biased-notation.
     member action : felt
@@ -28,9 +28,11 @@ end
 # and writes the details of that change to the program output, so that the inverse operation
 # may be performed by the solidity contract on the on-chain deposit/withdrawal vaults.
 func execute_modification(
-        range_check_ptr, modification_ptr : ModificationOutput*, dex_context_ptr : DexContext*,
-        vault_dict : DictAccess*) -> (
-        range_check_ptr, modification_ptr : ModificationOutput*, vault_dict : DictAccess*):
+    range_check_ptr,
+    modification_ptr : ModificationOutput*,
+    dex_context_ptr : DexContext*,
+    vault_dict : DictAccess*,
+) -> (range_check_ptr, modification_ptr : ModificationOutput*, vault_dict : DictAccess*):
     # Local variables.
     local balance_before
     local balance_after
@@ -106,10 +108,12 @@ func execute_modification(
         stark_key=output.stark_key,
         token_id=output.token_id,
         vault_index=vault_index,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
 
     return (
         range_check_ptr=range_check_ptr + 6,
         modification_ptr=modification_ptr + ModificationOutput.SIZE,
-        vault_dict=vault_dict + DictAccess.SIZE)
+        vault_dict=vault_dict + DictAccess.SIZE,
+    )
 end

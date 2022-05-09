@@ -28,9 +28,11 @@ end
 
 # Computes the dict key for the L1 vault updates, that equals: hash(vault_index|eth_key, token_id).
 func get_l1_vault_hash_key{pedersen_ptr : HashBuiltin*}(eth_key, token_id, vault_index) -> (
-        key : felt):
+    key : felt
+):
     let (hash) = hash2{hash_ptr=pedersen_ptr}(
-        x=vault_index * ETH_ADDRESS_SHIFT + eth_key, y=token_id)
+        x=vault_index * ETH_ADDRESS_SHIFT + eth_key, y=token_id
+    )
     return (key=hash)
 end
 
@@ -46,8 +48,8 @@ end
 # l1_vault_hash_key_to_explicit - a dictionary from the L1 vaults hash keys to the original
 #   L1VaultKey object (that holds the explicit keys, i.e., (eth_key, token_id, vault_index)).
 func output_l1_vault_update_data{
-        range_check_ptr, pedersen_ptr : HashBuiltin*, l1_vault_ptr : L1VaultOutput*}(
-        squashed_dict : DictAccess*, squashed_dict_end_ptr : DictAccess*) -> ():
+    range_check_ptr, pedersen_ptr : HashBuiltin*, l1_vault_ptr : L1VaultOutput*
+}(squashed_dict : DictAccess*, squashed_dict_end_ptr : DictAccess*) -> ():
     alloc_locals
     if squashed_dict_end_ptr == squashed_dict:
         return ()
@@ -73,7 +75,8 @@ func output_l1_vault_update_data{
     assert_nn_le(vault_index, L1_VAULT_INDEX_BOUND - 1)
     # Asserts that the L1 vault keys in the output match the hash key in the squashed dict.
     let (vault_key) = get_l1_vault_hash_key(
-        eth_key=l1_vault_ptr.eth_key, token_id=l1_vault_ptr.token_id, vault_index=vault_index)
+        eth_key=l1_vault_ptr.eth_key, token_id=l1_vault_ptr.token_id, vault_index=vault_index
+    )
     assert vault_key = squashed_dict.key
 
     # minimal_balance and final_balance were range checked and are guaranteed to be in the range
@@ -91,19 +94,21 @@ func output_l1_vault_update_data{
     tempvar pedersen_ptr = pedersen_ptr
 
     output_l1_vault_update_data(
-        squashed_dict=squashed_dict + DictAccess.SIZE, squashed_dict_end_ptr=squashed_dict_end_ptr)
+        squashed_dict=squashed_dict + DictAccess.SIZE, squashed_dict_end_ptr=squashed_dict_end_ptr
+    )
     return ()
 end
 
 # Updates the diff in the L1 vault corresponding to the given keys, by writing the new balance to
 # l1_vault_dict.
 func l1_vault_update_diff{
-        pedersen_ptr : HashBuiltin*, range_check_ptr, l1_vault_dict : DictAccess*}(
-        diff, eth_key, token_id, vault_index) -> ():
+    pedersen_ptr : HashBuiltin*, range_check_ptr, l1_vault_dict : DictAccess*
+}(diff, eth_key, token_id, vault_index) -> ():
     alloc_locals
     local balance_before
     let (vault_hash_key) = get_l1_vault_hash_key(
-        eth_key=eth_key, token_id=token_id, vault_index=vault_index)
+        eth_key=eth_key, token_id=token_id, vault_index=vault_index
+    )
 
     %{
         from starkware.cairo.dex.main_hint_functions import L1VaultKey
@@ -122,6 +127,7 @@ func l1_vault_update_diff{
     assert_nn_le(balance_after, BALANCE_BOUND - 1)
 
     dict_update{dict_ptr=l1_vault_dict}(
-        key=vault_hash_key, prev_value=balance_before, new_value=balance_after)
+        key=vault_hash_key, prev_value=balance_before, new_value=balance_after
+    )
     return ()
 end

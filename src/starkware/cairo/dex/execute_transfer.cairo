@@ -4,10 +4,18 @@ from starkware.cairo.common.cairo_builtins import HashBuiltin, SignatureBuiltin
 from starkware.cairo.common.dict_access import DictAccess
 from starkware.cairo.common.signature import verify_ecdsa_signature
 from starkware.cairo.dex.dex_constants import (
-    BALANCE_BOUND, EXPIRATION_TIMESTAMP_BOUND, NONCE_BOUND, PackedOrderMsg)
+    BALANCE_BOUND,
+    EXPIRATION_TIMESTAMP_BOUND,
+    NONCE_BOUND,
+    PackedOrderMsg,
+)
 from starkware.cairo.dex.dex_context import DexContext
 from starkware.cairo.dex.fee import (
-    FeeInfoExchange, FeeInfoUser, transfer_validate_fee, update_fee_vaults)
+    FeeInfoExchange,
+    FeeInfoUser,
+    transfer_validate_fee,
+    update_fee_vaults,
+)
 from starkware.cairo.dex.message_hashes import order_and_transfer_hash_31
 from starkware.cairo.dex.vault_update import l2_vault_update_diff
 from starkware.cairo.dex.verify_order_id import verify_order_id
@@ -20,11 +28,21 @@ from starkware.cairo.dex.verify_order_id import verify_order_id
 # Assumptions:
 # * 0 <= global_expiration_timestamp, and it has not expired yet.
 func execute_transfer(
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        conditional_transfer_ptr : felt*, vault_dict : DictAccess*, order_dict : DictAccess*,
-        dex_context_ptr : DexContext*) -> (
-        hash_ptr : HashBuiltin*, range_check_ptr, ecdsa_ptr : SignatureBuiltin*,
-        conditional_transfer_ptr : felt*, vault_dict : DictAccess*, order_dict : DictAccess*):
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    conditional_transfer_ptr : felt*,
+    vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+    dex_context_ptr : DexContext*,
+) -> (
+    hash_ptr : HashBuiltin*,
+    range_check_ptr,
+    ecdsa_ptr : SignatureBuiltin*,
+    conditional_transfer_ptr : felt*,
+    vault_dict : DictAccess*,
+    order_dict : DictAccess*,
+):
     # Local variables.
     local transfer : ExchangeTransfer*
     local order_id
@@ -87,7 +105,8 @@ func execute_transfer(
     tempvar inclusive_expiration_timestamp_bound = EXPIRATION_TIMESTAMP_BOUND - 1
     # Guarantee that expiration_timestamp <= inclusive_expiration_timestamp_bound <
     # EXPIRATION_TIMESTAMP_BOUND.
-    assert [range_check_ptr + 5] = inclusive_expiration_timestamp_bound - transfer.base.expiration_timestamp
+    assert [range_check_ptr + 5] = (
+        inclusive_expiration_timestamp_bound - transfer.base.expiration_timestamp)
 
     # Call vault_update for the sender.
     %{
@@ -101,7 +120,8 @@ func execute_transfer(
         stark_key=transfer.base.public_key,
         token_id=transfer.asset_id,
         vault_index=transfer.sender_vault_id,
-        vault_change_ptr=vault_dict)
+        vault_change_ptr=vault_dict,
+    )
 
     # Call vault_update for the receiver.
     %{
@@ -114,7 +134,8 @@ func execute_transfer(
         stark_key=transfer.receiver_public_key,
         token_id=transfer.asset_id,
         vault_index=transfer.receiver_vault_id,
-        vault_change_ptr=vault_dict + DictAccess.SIZE)
+        vault_change_ptr=vault_dict + DictAccess.SIZE,
+    )
 
     let vault_dict = vault_dict + 2 * DictAccess.SIZE
     if with_fee != 0:
@@ -140,24 +161,28 @@ func execute_transfer(
                     balance_before=transfer_witness.vault_diffs[3].prev.balance))
         %}
         transfer_validate_fee{range_check_ptr=range_check_ptr}(
-            fee_taken=fee_info_exchange.fee_taken, fee_limit=fee_info_user.fee_limit)
+            fee_taken=fee_info_exchange.fee_taken, fee_limit=fee_info_user.fee_limit
+        )
         # The use of L1 vaults is only allowed in settlements.
         let illegal_address = cast(0, DictAccess*)
         update_fee_vaults{
             pedersen_ptr=hash_ptr,
             range_check_ptr=range_check_ptr,
             vault_dict=vault_dict,
-            l1_vault_dict=illegal_address}(
+            l1_vault_dict=illegal_address,
+        }(
             user_public_key=transfer.base.public_key,
             fee_info_user=fee_info_user,
             fee_info_exchange=fee_info_exchange,
-            use_l1_src_vault=0)
+            use_l1_src_vault=0,
+        )
 
         # Compute transfer hash (using 64 bit vault id format).
         assert range_check_ptr_before_signature = range_check_ptr
         assert final_vault_dict = vault_dict
         let (message_hash) = transfer_hash{pedersen_ptr=hash_ptr}(
-            transfer=transfer, condition=condition)
+            transfer=transfer, condition=condition
+        )
     else:
         # Assert that the correct order_type is given for transfer (condition == 0) and
         # conditional transfer (condition != 0).
@@ -180,7 +205,8 @@ func execute_transfer(
             token1_or_pub_key=transfer.receiver_public_key,
             nonce=transfer.base.nonce,
             expiration_timestamp=transfer.base.expiration_timestamp,
-            condition=condition)
+            condition=condition,
+        )
 
         assert range_check_ptr_before_signature = range_check_ptr
         assert final_vault_dict = vault_dict
@@ -199,13 +225,14 @@ func execute_transfer(
         message=message_hash,
         public_key=transfer.base.public_key,
         signature_r=transfer.base.signature_r,
-        signature_s=transfer.base.signature_s)
+        signature_s=transfer.base.signature_s,
+    )
 
     # Order id verification.
-    let (range_check_ptr) = verify_order_id(
-        range_check_ptr=range_check_ptr_before_signature,
-        message_hash=message_hash,
-        order_id=order_id)
+    let range_check_ptr = range_check_ptr_before_signature
+    with range_check_ptr:
+        verify_order_id(message_hash=message_hash, order_id=order_id)
+    end
 
     # Update orders dict.
     let order_dict_access : DictAccess* = order_dict
@@ -229,5 +256,6 @@ func execute_transfer(
         ecdsa_ptr=ecdsa_ptr,
         conditional_transfer_ptr=new_conditional_transfer_pointer,
         vault_dict=final_vault_dict,
-        order_dict=order_dict + DictAccess.SIZE)
+        order_dict=order_dict + DictAccess.SIZE,
+    )
 end
